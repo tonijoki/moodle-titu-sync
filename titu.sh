@@ -121,10 +121,28 @@ else
 
   if [[ "$HTTP_STATUS" -ge 200 && "$HTTP_STATUS" -lt 300 ]]; then
     log "API call successful (HTTP $HTTP_STATUS) - Response: $RESPONSE_BODY"
-    current_timestamp=$(date '+%Y-%m-%d %H:%M:%S%:z')
-    current_timestamp=${current_timestamp:0:-3}
-    echo "$current_timestamp" > "$LAST_RUN_FILE"
-    log "Updated last run timestamp to current time: $current_timestamp"
+
+    # === Find maximum completion timestamp ===
+    MAX_COMPLETION_TIMESTAMP=0
+    for line in "${COMPLETION_LIST[@]}"; do
+        # Extract completiontime (assumes completiontime is the last field)
+        completion_time=$(echo "$line" | grep -oP '"completiontime"\s*:\s*"\K[^"]+')
+        if [[ -n "$completion_time" ]]; then
+            completion_epoch=$(date -d "$completion_time" '+%s')
+            if [[ "$completion_epoch" -gt "$MAX_COMPLETION_TIMESTAMP" ]]; then
+                MAX_COMPLETION_TIMESTAMP=$completion_epoch
+            fi
+        fi
+    done
+
+    if [[ "$MAX_COMPLETION_TIMESTAMP" -gt 0 ]]; then
+        NEW_LAST_RUN_TIMESTAMP=$(date -d "@$MAX_COMPLETION_TIMESTAMP" '+%Y-%m-%d %H:%M:%S%:z')
+        NEW_LAST_RUN_TIMESTAMP="${NEW_LAST_RUN_TIMESTAMP:0:-3}"
+        echo "$NEW_LAST_RUN_TIMESTAMP" > "$LAST_RUN_FILE"
+        log "Updated last run timestamp to latest completion time: $NEW_LAST_RUN_TIMESTAMP"
+    else
+        log "No valid completion timestamps found, not updating last run timestamp."
+    fi
   else
     log "API call failed (HTTP $HTTP_STATUS): $RESPONSE_BODY"
   fi
