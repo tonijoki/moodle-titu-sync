@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # === LOAD CONFIG ===
-CONF_FILE="titu.conf"
+CONF_FILE="/moodle/scripts/titu/titu.conf"
 if [[ -f "$CONF_FILE" ]]; then
     source "$CONF_FILE"
 else
@@ -22,7 +22,7 @@ mkdir -p "$LOG_DIR"
 
 SCRIPT_LOG="$LOG_DIR/titu-script.log"
 MAIN_LOG="$LOG_DIR/titu.log"
-exec &> "$SCRIPT_LOG"
+exec &>> "$SCRIPT_LOG"
 
 # === LOG FUNCTION ===
 log() {
@@ -39,9 +39,20 @@ case "${1:-}" in
 esac
 
 # === DB CREDENTIALS ===
-DBNAME=$(grep '$CFG->dbname' "$CONFIG_FILE" | awk -F"'" '{print $2}')
-DBUSER=$(grep '$CFG->dbuser' "$CONFIG_FILE" | awk -F"'" '{print $2}')
-DBPASS=$(grep '$CFG->dbpass' "$CONFIG_FILE" | awk -F"'" '{print $2}')
+# Moodle configista SSL-asetukset psql-komentoa varten
+PGSSLROOTCERT_PATH=$(grep "PGSSLROOTCERT=" "$CONFIG_FILE" | sed -E "s/.*PGSSLROOTCERT=([^']+).*/\1/")
+if [[ -n "$PGSSLROOTCERT_PATH" ]]; then
+    export PGSSLROOTCERT="$PGSSLROOTCERT_PATH"
+    export PGSSLMODE='verify-full'
+fi
+
+DBHOST=$(grep '\$CFG->dbhost' "$CONFIG_FILE" | awk -F"'" '{print $2}')
+DBNAME=$(grep '\$CFG->dbname' "$CONFIG_FILE" | awk -F"'" '{print $2}')
+DBUSER=$(grep '\$CFG->dbuser' "$CONFIG_FILE" | awk -F"'" '{print $2}')
+DBPASS=$(grep '\$CFG->dbpass' "$CONFIG_FILE" | awk -F"'" '{print $2}')
+
+# salasana ympäristöön ettei psql jää odottamaan promptia
+export PGPASSWORD="$DBPASS"
 
 # === GET LAST RUN TIME ===
 if [[ -f "$LAST_RUN_FILE" ]]; then
@@ -54,7 +65,7 @@ fi
 # === FETCH COMPLETION DATA ===
 COMPLETION_LIST=()
 for COURSE_ID in "${COURSE_IDS[@]}"; do
-    RESULTS=$(psql -U "$DBUSER" -d "$DBNAME" -t -A -F"|" -c "
+    RESULTS=$(psql -h "$DBHOST" -U "$DBUSER" -d "$DBNAME" -t -A -F"|" -c "
       SELECT json_build_object(
           'username', mdl_user.username,
           'courseId', mdl_course.id::int,
